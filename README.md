@@ -3,6 +3,8 @@ What's best in akka?
  - Spawning N actors to process N messages?
  - Spawning M actors using the akka routers and send them N messages?
 
+Results on running java version 1.7.0_79 an i5 Macbook Pro with 2 cores.
+
 ### Actor producer (N actors N messages)
 
 ```
