@@ -1,16 +1,15 @@
 package actor
 
 import akka.actor._
-import akka.util.Timeout
+import akka.routing._
 
 object ProducerConsumer extends App  {
   val system = ActorSystem("ProducerConsumer")
-  val producerActor = system.actorOf(Props[ProducerActor], name = "ProducerActor")
+  val producerActor = system.actorOf(Props[MessagesProducer])
   producerActor ! "start"
 }
 
-class ProducerActor extends Actor {
-  var messageCount = 1
+abstract class TerminatingProducer extends Actor {
   val maxMessages = 1000
   val startTime = System.currentTimeMillis()
 
@@ -21,28 +20,56 @@ class ProducerActor extends Actor {
     context.system.shutdown()
   }
 
-  def sendWork() = {
-    val actor = context.system.actorOf(Props[WorkerActor])
-    actor ! "calculate"
+  def terminated: Receive = {
+    case _ ⇒
+  }
+
+}
+
+class ActorProducer extends TerminatingProducer {
+  def sendWork(messageId: Int) = {
+    val worker = context.system.actorOf(Props[WorkerActor])
+    worker ! messageId
   }
 
   def receive = {
-    case msg: String => sendWork()
+    case start: String =>
+      sendWork(0)
 
-    case msg: Int =>
-      if (messageCount < maxMessages) {
-        messageCount += 1
-        sendWork()
+    case Result(id: Int, _) =>
+      if (id < maxMessages) {
+        sendWork(id + 1)
       } else {
+        terminate()
+      }
+  }
+
+}
+
+class MessagesProducer extends TerminatingProducer {
+  var resultCollection = List.empty[Result]
+
+  def receive = {
+    case start: String =>
+      val worker = context.actorOf(RoundRobinPool(5).props(Props[WorkerActor]))
+      for (i <- 0 to maxMessages) {
+        worker ! i
+      }
+
+    case r: Result =>
+      resultCollection = resultCollection :+ r
+      if (resultCollection.size >= maxMessages) {
+        context become terminated
         terminate()
       }
   }
 }
 
+case class Result(id: Int, value: Int)
 class WorkerActor extends Actor {
   def receive = {
-    case msg: String =>
+    case id: Int =>
       val result = SlowPrimeCalculator.calculate()
-      sender ! result
+      sender ! Result(id, result)
   }
 }
